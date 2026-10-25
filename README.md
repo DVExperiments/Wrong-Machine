@@ -1,68 +1,54 @@
-# WRONG MACHINE — v1.1.0 · SOURCE-FIRST SONIFICATION
+# WRONG MACHINE — v1.2.0 / FILE GLITCHER
 
-Static browser-only digital media laboratory for GitHub Pages. Version 1.1 adds **Raw File Sound** and **True Spectral Painting** while keeping v1.0's editor, audio-to-image tools, sequencer, and local artwork gallery.
+Static experimental data-art laboratory for GitHub Pages. Version 1.2 adds an interactive, browser-only **FILE GLITCHER** with a text-editable hexadecimal file/pixel view, before-and-after image previews, random corruption, reset and export, and transfer to the Image → Sound lab. The image/audio conversion features introduced in earlier versions remain available.
 
-## Deploy to GitHub Pages
+## Deploy
 
-1. Extract the ZIP and upload **all five files** (`index.html`, `style.css`, `app.js`, `sonification.js`, `README.md`) directly into your repository's **root** (not inside an extra folder).
-2. On GitHub, open **Settings → Pages → Deploy from a branch**. Select `main` and `/(root)`.
-3. After publication, refresh the live site (hard refresh if the old version is cached).
+Extract the ZIP and upload these six files into the **root** of the GitHub repository:
 
-No build, keys, server, database, API or npm installation is required. Uploaded media is processed locally in your browser. Remote Google Fonts are optional.
+- `index.html`
+- `style.css`
+- `app.js`
+- `sonification.js`
+- `glitcher.js` **(new in v1.2)**
+- `README.md`
 
-## New: TRUE SPECTRAL PAINTING (default)
+GitHub **Settings → Pages → Deploy from a branch → main → /(root)**. Hard-refresh the live page once deployed. Everything runs in the browser; there is no server, upload service, or login.
 
-**What it really does:** Decodes the uploaded image into a pixel array, optionally uses your image-editor adjustments, maps each column to time and vertical image position to frequency, and uses brightness/luminance as the strength of an FFT frequency bin. It reconstructs audio through an inverse FFT and overlap-add.
+## How the new File Glitcher works
 
-Controls:
-- 128 / 256 / 512 requested bins (actual unique FFT bins shown in the signal report)
-- Logarithmic or linear frequency spacing
-- Lower and upper frequency limits
-- Duration 2–20 seconds
-- WAV playback and download
-- Original-versus-edited image audio comparison
+Choose **03 FILE GLITCHER**, upload an image (PNG, JPG, WebP, GIF or BMP; file size limit 20 MiB). Choose one of two representations:
 
-**No fixed chord, oscillator bank, drum, bass line or hidden synthesizer layer.** The frequencies are actual FFT bins (not a musical scale), and magnitude comes from decoded image pixels.
+1. **Decoded RGBA pixels**, available for any supported image. The machine decodes the file to a canvas (maximum 1024 pixels on longest edge), then shows editable 2-digit hexadecimal bytes. Each pixel has four successive bytes (R, G, B, A). Changing bytes changes pixels. Output is always a newly encoded, **valid PNG**. This is robust and guaranteed to be an edit of decoded pixel data, but is **not** a direct edit of the compressed original file's binary structure.
+2. **Original JPEG compressed scan bytes**, enabled when a JPEG scan is detected. These are *literal original file bytes*. The editor parses JPEG markers, finds the entropy-coded image scan data, and restricts editing to a selected scan. Headers, metadata, image dimensions, existing JPEG markers/stuffing bytes and file length are locked; the editor also refuses to create new FF marker bytes. Edits can cause genuine compressed-image glitch effects **or** make the file undecodable. The app reports decoder failure instead of pretending the operation succeeded. Output is the modified JPEG byte stream with the original layout preserved. Multiple scans may exist in progressive JPEG files; you can select the scan being edited.
 
-**Critical scientific distinction:** An image is *not* an audio recording. Pixel data does not contain audio phase. To convert a magnitude spectrum to a waveform, this mode uses a deterministic, disclosed phase convention (seeded per FFT bin and continuously advancing with time). It uses an overlap window, fixed safety gain, brief anti-click fade, and only applies global gain protection if it would otherwise clip. Consequently, the resulting sound is a faithful, reproducible **sonification under documented rules**, not an objectively unique sound hidden in an image.
+The editable box represents bytes as **hex text** (e.g., `FF 00 80 2A`) and the ASCII translation is shown in a separate read-only display. Image files are binary; directly editing them as UTF-8 text would corrupt arbitrary byte sequences. This editor lets you make text-based changes *without silently recoding the entire file*. Do not delete or insert bytes: you must preserve **exactly the same count** in each edit window. All replacements must be two hexadecimal digits between `00` and `FF`.
 
-**Sanity test:** a pure black image yields silence; changing image content should change spectral output. A bright image will produce more spectral energy than a dark image unless peak safety applies.
+### Suggested exercises
 
-## New: RAW FILE SOUND (literal source-file bytes)
+- Try **RGBA mode** first on a photograph: jump to an offset well into the pixel buffer, change a cluster of hex bytes, click **Apply**, and see how pixels change. Try random corruption for a more visible result.
+- Try **JPEG scan mode** on a baseline JPEG. Set random intensity to a small value (e.g. `1`–`5` out of `10000`) to see whether the decoder still yields a recognisable image. Some JPEG edits will break the entire image or make the lower portion distorted: this is normal.
+- Compare the **Original** and **Glitched** previews; export the new file. Use **Send to Image → Sound** to hear the altered version with either Raw File Sound or True Spectral Painting.
+- **Reset original** always creates a fresh working copy from your source. Your local file is never overwritten.
 
-This method reads the **actual uploaded PNG/JPEG/WebP/etc. file's bytes** (`File.arrayBuffer()`), including format headers, compression data and metadata, and interprets them directly as PCM sample values. It does **not** decode the image to pixels for audio or insert other source material.
+### Important limitations
 
-Controls:
-- PCM interpretation: unsigned 8-bit, signed 8-bit, or little-endian signed 16-bit
-- Sample rate: 8,000 / 11,025 / 22,050 / 44,100 Hz
-- Bytes skipped from beginning (0 by default, which includes headers)
-- Optional peak normalization (off by default)
-- Max first 60 seconds (safety cap; explicit truncation notice when used)
-- WAV playback and download
+- JPEG entropy data does not guarantee editable, self-contained pixels. Tiny changes may cascade through the compressed stream; the decoder may reject it. This is **real file-level corruption**, not a deterministic visual filter. If a file no longer decodes, use Reset or try less corruption. You can still export the broken file to examine in other tools.
+- JPEG scan parser provides best effort across ordinary baseline and progressive JPEG files; unusual formats or unsupported markers may not be editable in this mode.
+- In Pixel mode, the working canvas is limited to 1024 pixels along its longest side to stay responsive in browsers; exports use this processed resolution. JPEG byte mode edits the **full original file bytes** and retains the original dimensions.
+- This version doesn't offer editable plaintext interpretations of compressed PNG `IDAT` streams. PNG generally needs valid DEFLATE encoding and CRC checks. Its RGBA pixel representation is the reliable alternative.
+- The editor holds one working image at a time and does not store edits after a page reload. Export to preserve the result.
+- Google Fonts load from the internet when available. All processing is local.
 
-The raw sound depends on encoding and playback settings. There is *no universal sample rate* intrinsic to an image file. Because raw mode reads the **original uploaded file**, editing the displayed pixels won't change raw sound. To compare altered file bytes, export the modified image to PNG and upload the new file. PNG export is an encoding operation: compressed image file bytes will change even for visually identical content, depending on how the encoder works.
+## Other tools
 
-## Still here from v1.0
+- Image → Sound: True Spectral Painting (FFT frequency magnitude derived from decoded pixels), Raw File Sound (uploaded file bytes interpreted as PCM), and legacy artistic modes.
+- Sound → Image: spectrogram, sample pixel art, and spiral visualisation; audio pitch/speed and effect controls.
+- Image music sequencer, download/export, local artwork gallery.
 
-- Legacy Brightness Scan, 16-band Harmonic Painting, and decoded-RGBA byte modes (all explicitly labeled as legacy)
-- Hue, saturation, brightness, contrast, glitch pixel editing, safe decoded-pixel hex edit, PNG download
-- Audio input, bass, treble, distortion and speed, playable audio before/after
-- Sound-to-image (spectrogram, sample art, waveform spiral), export and native sharing when supported
-- Up-to-eight-image composition sequencer (still uses the legacy modes)
-- Local browser artwork archive (does not create a public social network)
+Note: no image has an objectively unique sound. Raw File Sound preserves literal file bytes but needs a choice of PCM encoding/sample rate. Spectral Painting maps decoded luminance to frequency magnitudes and reconstructs phase, which isn't stored in image data. There are **no undisclosed harmonic backing layers** in the new modes.
 
-## Limits and next steps
+## Verification
 
-- Image canvas is scaled to a maximum 1024 px along its longest dimension for processing; **raw file mode uses the full original uploaded file bytes**.
-- True Spectral uses a 2,048-point inverse FFT at 22,050 samples per second and an overlap-add reconstruction; its maximum output frequency is just below Nyquist.
-- A browser-based image-to-sound conversion is a mapping, not a measurement of an image's intrinsic audible content.
-- Maximum Raw File Sound duration is 60 seconds; longer files are **truncated**, not secretly resampled or looped.
-- Optional harmonic/beat-studio layering is **not part of v1.1**. The pure signal comes first; deliberate synth layers can be added later behind explicit controls.
-- Some compressed image files may sound like broadband noise in raw mode. That's expected; compression bytes do not directly encode what the picture looks like.
-- Public profiles, community posting, likes and comments need a real storage/backend service; the local archive remains private on your browser.
-- Audio speed controls change pitch and duration together; independent time-stretch/pitch-shifting is not yet implemented.
-- Respect rights and permissions when publishing someone else's images/audio.
-
-## Development checks
-
-The synthesis source is in `sonification.js`, structured so it can also be imported in Node.js for deterministic tests. Automated checks cover exact unsigned-byte conversion, a black image producing silence, pixel-dependent spectral variation and invalid raw-file options. JavaScript syntax and page structure were checked. Full interactive browser testing could not be completed in the authoring environment due to browser navigation/injection restrictions; verify both new modes on the live GitHub Pages build.
+- JavaScript syntax checks and pure algorithm tests for hexadecimal parsing, JPEG scan bounds, and protected mutations are performed during packaging.
+- The browser preview, download, and integration flow should be tested in your deployed GitHub Pages version. Highly corrupted JPEGs may be rendered inconsistently across browsers.
