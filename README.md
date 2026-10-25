@@ -1,6 +1,6 @@
-# WRONG MACHINE — v1.2.0 / FILE GLITCHER
+# WRONG MACHINE — v1.3.0 / TEXT GLITCH LAB
 
-Static experimental data-art laboratory for GitHub Pages. Version 1.2 adds an interactive, browser-only **FILE GLITCHER** with a text-editable hexadecimal file/pixel view, before-and-after image previews, random corruption, reset and export, and transfer to the Image → Sound lab. The image/audio conversion features introduced in earlier versions remain available.
+Static experimental data-art laboratory for GitHub Pages. Version 1.3 replaces the safer hexadecimal file glitcher with a freer **TEXT GLITCH LAB**. Upload an image, open its file data in a real text editor, add or delete whatever you want, and refresh the preview to see whether the browser can still decode the result. This is much closer to the spirit of databending: unstable, hands-on, and willing to break.
 
 ## Deploy
 
@@ -17,26 +17,26 @@ GitHub **Settings → Pages → Deploy from a branch → main → /(root)**. Har
 
 ## How the new File Glitcher works
 
-Choose **03 FILE GLITCHER**, upload an image (PNG, JPG, WebP, GIF or BMP; file size limit 20 MiB). Choose one of two representations:
+Choose **03 FILE GLITCHER**, upload an image (PNG, JPG, WebP, GIF or BMP; practical file size limit 8 MiB for browser editing). The editor now works in two freely editable text views:
 
-1. **Decoded RGBA pixels**, available for any supported image. The machine decodes the file to a canvas (maximum 1024 pixels on longest edge), then shows editable 2-digit hexadecimal bytes. Each pixel has four successive bytes (R, G, B, A). Changing bytes changes pixels. Output is always a newly encoded, **valid PNG**. This is robust and guaranteed to be an edit of decoded pixel data, but is **not** a direct edit of the compressed original file's binary structure.
-2. **Original JPEG compressed scan bytes**, enabled when a JPEG scan is detected. These are *literal original file bytes*. The editor parses JPEG markers, finds the entropy-coded image scan data, and restricts editing to a selected scan. Headers, metadata, image dimensions, existing JPEG markers/stuffing bytes and file length are locked; the editor also refuses to create new FF marker bytes. Edits can cause genuine compressed-image glitch effects **or** make the file undecodable. The app reports decoder failure instead of pretending the operation succeeded. Output is the modified JPEG byte stream with the original layout preserved. Multiple scans may exist in progressive JPEG files; you can select the scan being edited.
+1. **Escaped Text** — the main mode. Printable ASCII characters are shown directly. Other bytes appear as escape sequences such as `\x89`, while newline, carriage return, tab, and backslash use `\n`, `\r`, `\t`, and `\\`. Users can type text, paste content, delete sections, or insert byte escapes directly.
+2. **Hex Stream** — a more exact byte-token view. The entire file becomes editable two-digit hex values separated by spaces, such as `89 50 4E 47 0D 0A`. Unlike the older protected editor, you can now freely add or remove tokens.
 
-The editable box represents bytes as **hex text** (e.g., `FF 00 80 2A`) and the ASCII translation is shown in a separate read-only display. Image files are binary; directly editing them as UTF-8 text would corrupt arbitrary byte sequences. This editor lets you make text-based changes *without silently recoding the entire file*. Do not delete or insert bytes: you must preserve **exactly the same count** in each edit window. All replacements must be two hexadecimal digits between `00` and `FF`.
+Both views allow arbitrary insertion, deletion, and replacement. That means files can partially decode, completely fail, or render differently across software. That uncertainty is intentional.
 
 ### Suggested exercises
 
-- Try **RGBA mode** first on a photograph: jump to an offset well into the pixel buffer, change a cluster of hex bytes, click **Apply**, and see how pixels change. Try random corruption for a more visible result.
-- Try **JPEG scan mode** on a baseline JPEG. Set random intensity to a small value (e.g. `1`–`5` out of `10000`) to see whether the decoder still yields a recognisable image. Some JPEG edits will break the entire image or make the lower portion distorted: this is normal.
-- Compare the **Original** and **Glitched** previews; export the new file. Use **Send to Image → Sound** to hear the altered version with either Raw File Sound or True Spectral Painting.
-- **Reset original** always creates a fresh working copy from your source. Your local file is never overwritten.
+- Open a PNG or JPEG and scroll through the escaped text. Delete a section, insert a short phrase like `GLITCH`, then press **Refresh Preview**.
+- Add explicit byte escapes such as `\x00\xFF\x7F` in the middle of the file and see whether the image survives.
+- Use **Random Mangle**, **Insert Noise**, or **Delete Chunk** to attack the file more aggressively.
+- Compare the **Original** and **Edited** previews; export the result. Use **Send to Image → Sound** to hear the altered image with either Raw File Sound or True Spectral Painting.
 
 ### Important limitations
 
-- JPEG entropy data does not guarantee editable, self-contained pixels. Tiny changes may cascade through the compressed stream; the decoder may reject it. This is **real file-level corruption**, not a deterministic visual filter. If a file no longer decodes, use Reset or try less corruption. You can still export the broken file to examine in other tools.
-- JPEG scan parser provides best effort across ordinary baseline and progressive JPEG files; unusual formats or unsupported markers may not be editable in this mode.
-- In Pixel mode, the working canvas is limited to 1024 pixels along its longest side to stay responsive in browsers; exports use this processed resolution. JPEG byte mode edits the **full original file bytes** and retains the original dimensions.
-- This version doesn't offer editable plaintext interpretations of compressed PNG `IDAT` streams. PNG generally needs valid DEFLATE encoding and CRC checks. Its RGBA pixel representation is the reliable alternative.
+- This editor is intentionally less protective. Users can add or delete bytes and completely destroy the file structure. That is a feature, not a bug.
+- The browser preview only succeeds when the current byte stream still decodes as an image format the browser understands. A failed preview does **not** mean the export failed; it just means the browser rejected the edited file.
+- Escaped Text mode is a readable projection of the bytes, not a standard source-code representation used by other tools. It is designed for experimentation.
+- Very large files become cumbersome because non-printable bytes expand into visible escapes. Smaller images work best.
 - The editor holds one working image at a time and does not store edits after a page reload. Export to preserve the result.
 - Google Fonts load from the internet when available. All processing is local.
 

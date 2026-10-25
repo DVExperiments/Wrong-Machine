@@ -55,3 +55,25 @@
 #glitchDrop.hover{border-color:var(--pink);background:#261326}
 @media(max-width:1100px){.glitch-columns{grid-template-columns:1fr}.glitch-columns .panel-left{border-right:0;border-bottom:1px solid var(--line)}.glitch-top{padding:26px}}
 @media(max-width:600px){.glitch-previews{grid-template-columns:1fr}.glitch-image canvas{height:260px}.glitch-nav{grid-template-columns:1fr auto}.glitch-nav label:last-child{grid-column:1/-1}.hex-scroller{grid-template-columns:72px 1fr}.hex-scroller pre,#glitchHex{font-size:10px;line-height:19px}.glitch-top{padding:20px}.tabs .tab{width:50%}}
+
+/* v1.3 freeform text glitch editor */
+.freeform-glitch .panel-right,.freeform-glitch .panel-left{padding:30px 32px 34px}
+.compact-row{margin-top:12px}
+.glitch-note-box,.glitch-editor-note,.glitch-result-meta{border:1px solid var(--line);background:#111523;color:#cbd3e2;padding:14px 16px;font:12px/1.7 'DM Mono',monospace}
+.glitch-note-box b{display:block;color:var(--acid);letter-spacing:.08em;margin-bottom:8px}
+.glitch-note-box p,.glitch-editor-note p{margin:0}
+.glitch-note-box code,.glitch-editor-note code,.glitch-help code{color:#ffbdd6;background:#1a1220;padding:1px 4px;border-radius:2px}
+.live-line{margin:16px 0 10px}
+.glitch-textarea{display:block;width:100%;min-height:420px;resize:vertical;background:#090d16;color:#e7eef7;border:1px solid #324058;border-radius:2px;padding:18px 16px;font:13px/1.55 'DM Mono',monospace;tab-size:2;white-space:pre-wrap;overflow-wrap:anywhere;box-shadow:inset 0 0 0 1px rgba(255,255,255,.02)}
+.glitch-textarea:focus{outline:none;border-color:var(--acid);box-shadow:0 0 0 1px rgba(156,255,100,.45),0 0 26px rgba(156,255,100,.08)}
+.glitch-editor-toolbar{display:flex;gap:18px;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;margin-top:14px}
+.glitch-editor-stats{display:flex;gap:14px;flex-wrap:wrap;font:11px/1.6 'DM Mono',monospace;color:#aeb6c8}
+.glitch-editor-stats span{padding:7px 10px;background:#101420;border:1px solid var(--line)}
+.glitch-editor-actions{display:flex;gap:10px;flex-wrap:wrap}
+.freeform-random{margin-top:20px}
+.glitch-reference{margin-top:18px;border:1px solid var(--line);background:#0d111b;padding:0 16px}
+.glitch-reference summary{cursor:pointer;padding:16px 0;color:var(--acid);font:11px 'DM Mono',monospace;letter-spacing:.08em}
+.glitch-help{padding:0 0 16px;color:#c8d1df;font:12px/1.7 'DM Mono',monospace}
+.glitch-help p{margin:0 0 10px}
+.single-column-mobile{margin-top:18px}
+@media(max-width:900px){.freeform-glitch .panel-right,.freeform-glitch .panel-left{padding:24px 22px 26px}.glitch-textarea{min-height:340px}}
