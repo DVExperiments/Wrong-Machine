@@ -2,10 +2,10 @@
 const $=id=>document.getElementById(id), $$=q=>[...document.querySelectorAll(q)];let toastTimer;function notify(msg){$('toast').textContent=msg;$('toast').classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').classList.remove('show'),3400)}
 $$('.tab').forEach(b=>b.addEventListener('click',()=>{$$('.tab').forEach(x=>x.classList.toggle('active',x===b));$$('.pane').forEach(p=>p.classList.toggle('active',p.id==='pane-'+b.dataset.tab))}));
 function slider(id,fmt){$(id).addEventListener('input',()=>{$(id+'Val').textContent=fmt(+$ (id).value)})}slider('hue',v=>v+'°');slider('sat',v=>v+'%');slider('bright',v=>v+'%');slider('contrast',v=>v+'%');slider('duration',v=>v+'s');slider('pitch',v=>v+' Hz');slider('speed',v=>(v/100).toFixed(2)+'×');slider('bass',v=>v+' dB');slider('treble',v=>v+' dB');slider('dist',v=>v+'%');slider('slotDuration',v=>v+'s');
-const ic=$('imageCanvas'),ix=ic.getContext('2d',{willReadFrequently:true});let imageOriginal=null,imagePixels=null,imageAudioURL=null,imageWav=null,imageBeforeWav=null,sourceImage=null;
+const ic=$('imageCanvas'),ix=ic.getContext('2d',{willReadFrequently:true});let imageOriginal=null,imagePixels=null,imageAudioURL=null,imageWav=null,imageBeforeWav=null,sourceImage=null,sourceFileBytes=null,sourceFileName="";
 function placeholder(c,txt){const x=c.getContext('2d');x.fillStyle='#090c14';x.fillRect(0,0,c.width,c.height);x.strokeStyle='#293244';for(let y=0;y<c.height;y+=20){x.beginPath();x.moveTo(0,y);x.lineTo(c.width,y);x.stroke()}x.fillStyle='#657082';x.font='13px monospace';x.textAlign='center';x.fillText(txt,c.width/2,c.height/2)}placeholder(ic,'AWAITING IMAGE DATA');placeholder($('audioCanvas'),'AWAITING AUDIO DATA');
 function fileImage(file){return new Promise((resolve,reject)=>{if(!file||!file.type.startsWith('image/'))return reject(Error('Choose an image file'));const u=URL.createObjectURL(file),im=new Image();im.onload=()=>{URL.revokeObjectURL(u);resolve(im)};im.onerror=()=>{URL.revokeObjectURL(u);reject(Error('Cannot decode image'))};im.src=u})}
-async function loadImage(file){try{let im=await fileImage(file);sourceImage=im;const scale=Math.min(1,1024/Math.max(im.naturalWidth,im.naturalHeight));ic.width=Math.max(1,Math.round(im.naturalWidth*scale));ic.height=Math.max(1,Math.round(im.naturalHeight*scale));ix.clearRect(0,0,ic.width,ic.height);ix.drawImage(im,0,0,ic.width,ic.height);imageOriginal=ix.getImageData(0,0,ic.width,ic.height);imagePixels=new Uint8ClampedArray(imageOriginal.data);$('imageMeta').textContent=`${ic.width} × ${ic.height}`;['hue','sat','bright','contrast'].forEach((id)=>{$(id).value=id==='hue'?0:100;$(id).dispatchEvent(new Event('input'))});renderImage();notify('IMAGE LOADED / READY TO BEND')}catch(e){notify(e.message)}}$('imageInput').addEventListener('change',e=>loadImage(e.target.files[0]));
+async function loadImage(file){try{if(!file)return;sourceFileBytes=null;imageWav=null;$('downloadImageAudio').disabled=true;$('compareImage').disabled=true;let [im,rawBuffer]=await Promise.all([fileImage(file),file.arrayBuffer()]);sourceFileBytes=new Uint8Array(rawBuffer);sourceFileName=file.name;sourceImage=im;const scale=Math.min(1,1024/Math.max(im.naturalWidth,im.naturalHeight));ic.width=Math.max(1,Math.round(im.naturalWidth*scale));ic.height=Math.max(1,Math.round(im.naturalHeight*scale));ix.clearRect(0,0,ic.width,ic.height);ix.drawImage(im,0,0,ic.width,ic.height);imageOriginal=ix.getImageData(0,0,ic.width,ic.height);imagePixels=new Uint8ClampedArray(imageOriginal.data);$('imageMeta').textContent=`${ic.width} × ${ic.height}`;['hue','sat','bright','contrast'].forEach((id)=>{$(id).value=id==='hue'?0:100;$(id).dispatchEvent(new Event('input'))});renderImage();notify('IMAGE LOADED / READY TO BEND')}catch(e){notify(e.message)}}$('imageInput').addEventListener('change',e=>loadImage(e.target.files[0]));
 function renderImage(){if(!imageOriginal)return;let d=new Uint8ClampedArray(imagePixels),h=+$('hue').value,s=+$('sat').value/100,b=+$('bright').value/100,c=+$('contrast').value/100;for(let i=0;i<d.length;i+=4){let r=d[i]/255,g=d[i+1]/255,bl=d[i+2]/255;let mx=Math.max(r,g,bl),mn=Math.min(r,g,bl),diff=mx-mn,hh=0,ss=mx===0?0:diff/mx;if(diff){if(mx===r)hh=((g-bl)/diff)%6;else if(mx===g)hh=(bl-r)/diff+2;else hh=(r-g)/diff+4;hh*=60}hh=(hh+h+3600)%360;ss=Math.min(1,ss*s);let v=mx;let ch=v*ss,xx=ch*(1-Math.abs((hh/60)%2-1)),m=v-ch;let rr,gg,bb;if(hh<60)[rr,gg,bb]=[ch,xx,0];else if(hh<120)[rr,gg,bb]=[xx,ch,0];else if(hh<180)[rr,gg,bb]=[0,ch,xx];else if(hh<240)[rr,gg,bb]=[0,xx,ch];else if(hh<300)[rr,gg,bb]=[xx,0,ch];else [rr,gg,bb]=[ch,0,xx];d[i]=Math.max(0,Math.min(255,((rr+m)*b-.5)*c*255+127.5));d[i+1]=Math.max(0,Math.min(255,((gg+m)*b-.5)*c*255+127.5));d[i+2]=Math.max(0,Math.min(255,((bb+m)*b-.5)*c*255+127.5))}ix.putImageData(new ImageData(d,ic.width,ic.height),0,0)}['hue','sat','bright','contrast'].forEach(id=>$(id).addEventListener('input',renderImage));
 $('resetImage').onclick=()=>{if(!imageOriginal)return notify('LOAD AN IMAGE FIRST');imagePixels=new Uint8ClampedArray(imageOriginal.data);['hue','sat','bright','contrast'].forEach(id=>{$(id).value=id==='hue'?0:100;$(id).dispatchEvent(new Event('input'))});notify('IMAGE RESET')};$('glitchImage').onclick=()=>{if(!imagePixels)return notify('LOAD AN IMAGE FIRST');let w=ic.width,h=ic.height;for(let n=0;n<Math.max(6,Math.floor(h/25));n++){let y=Math.floor(Math.random()*h),height=Math.min(h-y,1+Math.floor(Math.random()*Math.max(3,h/20))),shift=Math.floor((Math.random()-.5)*w*.5);for(let yy=y;yy<y+height;yy++){let row=imagePixels.slice(yy*w*4,(yy+1)*w*4);for(let x=0;x<w;x++){let from=((x+shift+w)%w)*4,to=(yy*w+x)*4;imagePixels[to]=row[from];imagePixels[to+1]=row[from+1];imagePixels[to+2]=row[from+2]}}}renderImage();notify('PIXEL DISPLACEMENT APPLIED')};$('saveImage').onclick=()=>{if(!imageOriginal)return notify('LOAD AN IMAGE FIRST');downloadCanvas(ic,'wrong-machine-image.png')};
 $('applyBytes').onclick=()=>{if(!imagePixels)return notify('LOAD AN IMAGE FIRST');let offset=Number($('byteOffset').value),str=$('byteHex').value.trim(),parts=str.split(/[\s,]+/);if(!Number.isSafeInteger(offset)||offset<0||parts.length>4096||!parts.length||parts.some(s=>!/^[0-9a-fA-F]{2}$/.test(s))||offset+parts.length>imagePixels.length)return notify('INVALID HEX / OFFSET / RANGE (MAX 4096 BYTES)');parts.forEach((v,i)=>imagePixels[offset+i]=parseInt(v,16));renderImage();notify(parts.length+' PIXEL BYTES MODIFIED')};
@@ -15,7 +15,65 @@ function wavBlob(samples,sr=22050){let bytes=new ArrayBuffer(44+samples.length*2
 function downloadBlob(blob,name){let a=document.createElement('a'),url=URL.createObjectURL(blob);a.href=url;a.download=name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),3000)}function downloadCanvas(c,name){c.toBlob(b=>b?downloadBlob(b,name):notify('EXPORT FAILED'),'image/png')}
 function waveform(canvas,samples){let ctx=canvas.getContext('2d'),w=canvas.width,h=canvas.height;ctx.fillStyle='#080a10';ctx.fillRect(0,0,w,h);ctx.strokeStyle='#273241';ctx.beginPath();ctx.moveTo(0,h/2);ctx.lineTo(w,h/2);ctx.stroke();ctx.strokeStyle='#d5ff49';ctx.lineWidth=1.3;ctx.beginPath();for(let x=0;x<w;x++){let start=Math.floor(x*samples.length/w),end=Math.max(start+1,Math.floor((x+1)*samples.length/w)),mn=1,mx=-1;for(let i=start;i<end;i++){mn=Math.min(mn,samples[i]);mx=Math.max(mx,samples[i])}ctx.moveTo(x,(1-mx)*h/2);ctx.lineTo(x,(1-mn)*h/2)}ctx.stroke()}placeholder($('imageWave'),'AWAITING SOUND TRANSLATION');
 function audioURLSet(el,blob,old){if(old)URL.revokeObjectURL(old);let url=URL.createObjectURL(blob);el.src=url;return url}
-$('renderImageAudio').onclick=()=>{if(!imageOriginal)return notify('LOAD AN IMAGE FIRST');let d=canvasPixels(ic).data,mode=$('imageMode').value,duration=+$('duration').value,pitch=+$('pitch').value;let samples=imageToSamples(d,ic.width,ic.height,mode,duration,pitch);imageWav=wavBlob(samples);imageAudioURL=audioURLSet($('imageAudioPlayer'),imageWav,imageAudioURL);waveform($('imageWave'),samples);$('imageAudioState').textContent='SIGNAL READY';$('downloadImageAudio').disabled=false;$('compareImage').disabled=false;notify('IMAGE TRANSLATED / PLAY OR EXPORT')};$('downloadImageAudio').onclick=()=>imageWav&&downloadBlob(imageWav,'wrong-machine-image-sound.wav');$('compareImage').onclick=()=>{if(!imageOriginal)return;let duration=+$('duration').value,pitch=+$('pitch').value,mode=$('imageMode').value,orig=imageToSamples(imageOriginal.data,ic.width,ic.height,mode,duration,pitch);imageBeforeWav=wavBlob(orig);const a=new Audio(URL.createObjectURL(imageBeforeWav));a.play().then(()=>notify('PLAYING ORIGINAL IMAGE SOUND / NEXT PLAY GENERATED')).catch(()=>notify('PLAYBACK BLOCKED'));a.onended=()=>{URL.revokeObjectURL(a.src);$('imageAudioPlayer').play().catch(()=>{})}};
+// v1.1 SOURCE-FIRST RENDER MODES. The legacy methods remain explicitly labelled.
+function updateImageModeUI(){
+  const mode=$('imageMode').value,raw=mode==='file-raw',spectral=mode==='spectral-true',legacy=!raw&&!spectral;
+  $('rawFileControls').hidden=!raw;$('trueSpectralControls').hidden=!spectral;
+  $('durationGroup').hidden=raw;$('legacyPitchGroup').hidden=!legacy;
+  $('compareImage').disabled=raw||!imageWav;
+  $('sourceProvenance').textContent=raw?'FILE BYTES → PCM · NO SYNTHESIS · ORIGINAL UPLOADED FILE ONLY':spectral?'DECODED IMAGE PIXELS → FFT MAGNITUDES · NO SYNTH BED · DETERMINISTIC RECONSTRUCTED PHASE':'LEGACY / ARTISTIC SYNTHESIS · FIXED OSCILLATORS OR RGBA PIXEL BYTES';
+  $('sonificationMethodNote').textContent=raw?'This plays literal uploaded file bytes, interpreted as PCM samples using the selected format and rate. The file has no intrinsic sample rate. Editing pixels above does not edit original file bytes.':spectral?'Every FFT magnitude comes from pixel luminance at a particular time and frequency. Phase is absent from images, so reconstruction uses a disclosed deterministic phase rule. No oscillator chord, beat or musical layer is added.':'Legacy methods generate audio using fixed oscillators or decoded RGBA pixel bytes, not literal source-file bytes.';
+  $('renderImageAudio').textContent=raw?'HEAR ORIGINAL FILE BYTES ↗':spectral?'RECONSTRUCT PIXEL SPECTRUM ↗':'TRANSLATE TO SOUND ↗';
+  $('imageAudioState').textContent='NO OUTPUT FOR SELECTED METHOD';
+  $('downloadImageAudio').disabled=true;$('compareImage').disabled=true;
+  $('signalReport').textContent='GENERATE TO INSPECT THE EXACT CONVERSION SETTINGS.';
+  imageWav=null;
+}
+$('imageMode').addEventListener('change',updateImageModeUI);
+function renderSonification(pixelData,mode){
+  if(mode==='file-raw'){
+    if(!sourceFileBytes)throw Error('UPLOAD AN IMAGE FILE FIRST');
+    return WMSonify.rawFile(sourceFileBytes,{encoding:$('rawEncoding').value,sampleRate:+$('rawSampleRate').value,headerSkip:+$('rawSkip').value,normalize:$('rawNormalize').checked,maxSeconds:60});
+  }
+  if(mode==='spectral-true')return WMSonify.spectralPainting(pixelData,ic.width,ic.height,{duration:+$('duration').value,bands:+$('spectralBands').value,minHz:+$('spectralMin').value,maxHz:+$('spectralMax').value,scale:$('spectralScale').value});
+  return {samples:imageToSamples(pixelData,ic.width,ic.height,mode,+$('duration').value,+$('pitch').value),sampleRate:22050,info:{legacy:true,mode}};
+}
+function describeSignal(result,mode){const info=result.info;
+  if(mode==='file-raw')return `RAW FILE: ${info.bytesUsed.toLocaleString()} / ${info.totalFileBytes.toLocaleString()} BYTES USED · SKIPPED ${info.skippedBytes} · ${info.encoding.toUpperCase()} @ ${info.sampleRate} Hz · ${info.duration.toFixed(2)}s · ${info.normalize?'PEAK NORMALIZED':'UNMODIFIED PCM LEVEL'}${info.truncated?' · 60s SAFETY CAP / FILE TRUNCATED':''}`;
+  if(mode==='spectral-true')return `PIXEL SPECTRUM: ${info.binsUsed} DISTINCT FFT BINS · ${info.frequencyMin}–${info.frequencyMax} Hz · ${info.scale.toUpperCase()} · ${info.duration.toFixed(1)}s · PHASE RECONSTRUCTED${info.antiClipAdjusted?' · SAFETY PEAK ADJUSTMENT':''}`;
+  return `LEGACY MAPPING: ${info.mode.toUpperCase()} · 22050 Hz · ARTISTIC SYNTHESIS`;
+}
+$('renderImageAudio').onclick=()=>{
+  if(!imageOriginal)return notify('LOAD AN IMAGE FIRST');
+  const btn=$('renderImageAudio');btn.disabled=true;btn.textContent='RECONSTRUCTING SIGNAL…';
+  setTimeout(()=>{try{
+    const mode=$('imageMode').value,result=renderSonification(canvasPixels(ic).data,mode);
+    imageWav=wavBlob(result.samples,result.sampleRate);
+    imageAudioURL=audioURLSet($('imageAudioPlayer'),imageWav,imageAudioURL);
+    waveform($('imageWave'),result.samples);
+    $('imageAudioState').textContent='SIGNAL READY';
+    $('signalReport').textContent=describeSignal(result,mode);
+    $('downloadImageAudio').disabled=false;$('compareImage').disabled=mode==='file-raw';
+    notify('SIGNAL READY / ORIGINAL DATA PATH PRESERVED');
+  }catch(e){$('signalReport').textContent='ERROR: '+e.message;notify(e.message||'RECONSTRUCTION FAILED');}
+  finally{btn.disabled=false;btn.textContent=$('imageMode').value==='file-raw'?'HEAR ORIGINAL FILE BYTES ↗':$('imageMode').value==='spectral-true'?'RECONSTRUCT PIXEL SPECTRUM ↗':'TRANSLATE TO SOUND ↗';}
+  },35);
+};
+$('downloadImageAudio').onclick=()=>imageWav&&downloadBlob(imageWav,'wrong-machine-'+($('imageMode').value==='file-raw'?'raw-file':'pixel-spectral')+'.wav');
+$('compareImage').onclick=()=>{
+  if(!imageOriginal||!imageWav)return;
+  const mode=$('imageMode').value;
+  if(mode==='file-raw')return notify('RAW MODE USES UNCHANGED ORIGINAL FILE BYTES');
+  try{
+    const orig=renderSonification(imageOriginal.data,mode);
+    imageBeforeWav=wavBlob(orig.samples,orig.sampleRate);
+    const originalUrl=URL.createObjectURL(imageBeforeWav),a=new Audio(originalUrl);
+    a.play().then(()=>notify('PLAYING ORIGINAL PIXELS / THEN MODIFIED')).catch(()=>notify('PLAYBACK BLOCKED'));
+    a.onended=()=>{URL.revokeObjectURL(originalUrl);$('imageAudioPlayer').play().catch(()=>{})};
+  }catch(e){notify(e.message)}
+};
+updateImageModeUI();
+
 let ac=null,originalBuffer=null,bentBuffer=null,audioWav=null,audioWavURL=null;const getAC=()=>ac||(ac=new (window.AudioContext||window.webkitAudioContext)());$('audioInput').addEventListener('change',async e=>{let f=e.target.files[0];if(!f)return;try{let ctx=getAC(),buf=await f.arrayBuffer();originalBuffer=await ctx.decodeAudioData(buf);bentBuffer=null;$('audioMeta').textContent=`${f.name} / ${originalBuffer.duration.toFixed(1)}s / ${originalBuffer.sampleRate} Hz`;$('originalAudio').disabled=false;$('bentAudio').disabled=true;$('downloadBent').disabled=true;notify('AUDIO DECODED / READY TO BEND')}catch(err){notify('CANNOT DECODE THIS AUDIO FILE')}});
 function mixMono(buffer){let n=buffer.length,mono=new Float32Array(n);for(let c=0;c<buffer.numberOfChannels;c++){let d=buffer.getChannelData(c);for(let i=0;i<n;i++)mono[i]+=d[i]/buffer.numberOfChannels}return mono}
 function makeCurve(amount){let n=2048,curve=new Float32Array(n),k=amount*8;for(let i=0;i<n;i++){let x=i*2/(n-1)-1;curve[i]=k===0?x:Math.tanh(x*k)/Math.tanh(k)}return curve}
