@@ -77,3 +77,10 @@
 .glitch-help p{margin:0 0 10px}
 .single-column-mobile{margin-top:18px}
 @media(max-width:900px){.freeform-glitch .panel-right,.freeform-glitch .panel-left{padding:24px 22px 26px}.glitch-textarea{min-height:340px}}
+.glitch-pixel-settings{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;padding:12px 14px;background:#111a18;border:1px solid rgba(152,255,90,.25);margin:12px 0;color:var(--acid);font:11px/1.6 'DM Mono',monospace}
+.glitch-pixel-settings select{background:#080d13;border:1px solid #536a50;color:#e4fbd3;padding:8px;font:11px 'DM Mono',monospace;margin-left:10px}
+.glitch-pixel-settings span{color:#b2c8ac;font-size:10px}
+.freeform-glitch .glitch-previews{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+@media(max-width:720px){.freeform-glitch .glitch-previews{grid-template-columns:1fr}}
+
+.glitch-pixel-settings[hidden]{display:none !important}

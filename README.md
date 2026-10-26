@@ -1,54 +1,56 @@
-# WRONG MACHINE — v1.3.0 / TEXT GLITCH LAB
+# WRONG MACHINE — v1.4 / LIVE TEXT GLITCH LAB
 
-Static experimental data-art laboratory for GitHub Pages. Version 1.3 replaces the safer hexadecimal file glitcher with a freer **TEXT GLITCH LAB**. Upload an image, open its file data in a real text editor, add or delete whatever you want, and refresh the preview to see whether the browser can still decode the result. This is much closer to the spirit of databending: unstable, hands-on, and willing to break.
+A static GitHub Pages experimental audio / image art app. **v1.4 fixes the v1.3 glitcher problem where most raw text edits simply caused “current file does not decode”.** The new default mode is visual-first **Pixel Text**, and raw file corruption remains available as an optional experiment.
 
-## Deploy
+## Install on GitHub Pages
 
-Extract the ZIP and upload these six files into the **root** of the GitHub repository:
+Unzip and upload these six files into your repository root, replacing their older versions:
 
 - `index.html`
 - `style.css`
 - `app.js`
 - `sonification.js`
-- `glitcher.js` **(new in v1.2)**
+- `glitcher.js`
 - `README.md`
 
-GitHub **Settings → Pages → Deploy from a branch → main → /(root)**. Hard-refresh the live page once deployed. Everything runs in the browser; there is no server, upload service, or login.
+Use GitHub **Settings → Pages → Deploy from a branch → main → /(root)**. Hard-reload the browser after deployment. No backend or uploads required; everything runs locally.
 
-## How the new File Glitcher works
+## How to use the fixed glitcher
 
-Choose **03 FILE GLITCHER**, upload an image (PNG, JPG, WebP, GIF or BMP; practical file size limit 8 MiB for browser editing). The editor now works in two freely editable text views:
+1. Open **03 TEXT GLITCHER** and choose an image (PNG/JPEG/GIF/WebP/BMP, under 8 MB).
+2. The default is **PIXEL TEXT / LIVE IMAGE GLITCH**. The editor shows the decoded RGB pixel colours, not compressed PNG/JPEG bytes.
+3. Each six-character hexadecimal token is one pixel: `FF0000` is red, `00FF00` is green, `0000FF` is blue. The initial image determines all the starting colours.
+4. Replace colours, delete groups of tokens, insert new colour tokens, or type arbitrary words such as `GLITCH`. Words are hashed to deterministic colours. Adding/deleting tokens shifts subsequent pixels, creating graphical glitches.
+5. The image preview updates automatically after you stop typing. You can also press **REFRESH PREVIEW** manually.
+6. Export the result as a **valid PNG**, or send it to **IMAGE → SOUND** to hear the new pixel data. The exported PNG is limited to the pixel-workspace resolution, selectable as 96, 160, or 256 pixels on the longest side (images smaller than the limit remain at native size).
 
-1. **Escaped Text** — the main mode. Printable ASCII characters are shown directly. Other bytes appear as escape sequences such as `\x89`, while newline, carriage return, tab, and backslash use `\n`, `\r`, `\t`, and `\\`. Users can type text, paste content, delete sections, or insert byte escapes directly.
-2. **Hex Stream** — a more exact byte-token view. The entire file becomes editable two-digit hex values separated by spaces, such as `89 50 4E 47 0D 0A`. Unlike the older protected editor, you can now freely add or remove tokens.
+The left side shows the source image and glitched preview; the right side is the unrestricted text editor. **No valid pixel text edit should produce a file-decoding error**—missing tokens are black, extra tokens are ignored, and arbitrary words become colours. The text editor is a creative representation of decoded pixels, not the original compressed image's textual file content.
 
-Both views allow arbitrary insertion, deletion, and replacement. That means files can partially decode, completely fail, or render differently across software. That uncertainty is intentional.
+## Advanced: actual raw file databending
 
-### Suggested exercises
+Select **RAW FILE / ESCAPED BINARY TEXT** to examine original file bytes. Printable bytes are displayed literally, and special/non-printable bytes appear as `\\xNN` escapes. Or choose **RAW FILE / HEX STREAM** to add, remove and change two-digit hexadecimal byte tokens. These two modes modify the *actual uploaded file bytes*. Export retains the original file format and can produce non-decodable files.
 
-- Open a PNG or JPEG and scroll through the escaped text. Delete a section, insert a short phrase like `GLITCH`, then press **Refresh Preview**.
-- Add explicit byte escapes such as `\x00\xFF\x7F` in the middle of the file and see whether the image survives.
-- Use **Random Mangle**, **Insert Noise**, or **Delete Chunk** to attack the file more aggressively.
-- Compare the **Original** and **Edited** previews; export the result. Use **Send to Image → Sound** to hear the altered image with either Raw File Sound or True Spectral Painting.
+**Important:** PNG, JPEG, WebP and other image formats contain headers, structure, compressed data, and sometimes checksums. Arbitrary additions/deletions to actual compressed data usually break decoding entirely. That does not mean the preview mechanism is broken: the original edited file has become invalid. Switch back to Pixel Text to make visible glitches reliably.
 
-### Important limitations
+Switching between the two approaches does not combine them. The app preserves the unsaved editor text separately per view during the session, and the raw modes begin from the original file bytes rather than from the pixel-edited output. To turn a pixel-edit into literal raw file bytes, export the PNG and re-upload it.
 
-- This editor is intentionally less protective. Users can add or delete bytes and completely destroy the file structure. That is a feature, not a bug.
-- The browser preview only succeeds when the current byte stream still decodes as an image format the browser understands. A failed preview does **not** mean the export failed; it just means the browser rejected the edited file.
-- Escaped Text mode is a readable projection of the bytes, not a standard source-code representation used by other tools. It is designed for experimentation.
-- Very large files become cumbersome because non-printable bytes expand into visible escapes. Smaller images work best.
-- The editor holds one working image at a time and does not store edits after a page reload. Export to preserve the result.
-- Google Fonts load from the internet when available. All processing is local.
+## Tests performed
 
-## Other tools
+Automated headless Chromium interaction tests against the actual static files:
 
-- Image → Sound: True Spectral Painting (FFT frequency magnitude derived from decoded pixels), Raw File Sound (uploaded file bytes interpreted as PCM), and legacy artistic modes.
-- Sound → Image: spectrogram, sample pixel art, and spiral visualisation; audio pitch/speed and effect controls.
-- Image music sequencer, download/export, local artwork gallery.
+- JPG and PNG import succeeds without page script errors.
+- Pixel text is populated with real image RGB data.
+- Replacing or inserting text changes the preview pixels.
+- Deleting everything still creates a valid preview (black image).
+- Random mangle, insert and delete controls run and update the preview.
+- Exported PNG opens correctly and preserves the selected pixel grid size.
+- Send to Image → Sound loads the edited image in the sound lab.
+- Raw file mode can render unchanged original file bytes and properly reports decoder failure after deliberate corruption.
 
-Note: no image has an objectively unique sound. Raw File Sound preserves literal file bytes but needs a choice of PCM encoding/sample rate. Spectral Painting maps decoded luminance to frequency magnitudes and reconstructs phase, which isn't stored in image data. There are **no undisclosed harmonic backing layers** in the new modes.
+## Limits
 
-## Verification
-
-- JavaScript syntax checks and pure algorithm tests for hexadecimal parsing, JPEG scan bounds, and protected mutations are performed during packaging.
-- The browser preview, download, and integration flow should be tested in your deployed GitHub Pages version. Highly corrupted JPEGs may be rendered inconsistently across browsers.
+- Browser-only; edits disappear after reloading unless exported.
+- The 8 MB upload size limit and max 256-pixel editing grid keep text editing responsive.
+- Pixel Text is intentionally RGB only (source alpha is composited onto the lab's dark background).
+- Raw file editing offers no structural protections; broken files remain exportable.
+- JPEG images may yield different corruption patterns than PNG in raw mode and are frequently undecodable after arbitrary changes.

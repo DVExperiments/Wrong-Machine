@@ -1,409 +1,310 @@
-/* WRONG MACHINE v1.3 — freeform text glitch editor.
-   Open an image as editable text, add/delete arbitrary content,
-   decode the resulting bytes back into an image if possible.
-   No uploads. No file-structure protection. Broken outputs allowed. */
-(function(){
+/* WRONG MACHINE v1.4 — Live Pixel Text + Raw Binary File Glitcher.
+   Pixel Text: decoded real RGB values, editable as arbitrary text; always renders to PNG.
+   Raw File: exact bytes rendered as escaped text or hex; may stop decoding.
+   100% browser local, no uploads. */
+(function(root,factory){
+  const api=factory();
+  if(typeof module==='object' && module.exports)module.exports=api;
+  if(root)root.WMTextGlitch=api;
+})(typeof globalThis!=='undefined'?globalThis:null,function(){
   'use strict';
-  if(typeof document==='undefined') return;
-
-  const $ = id => document.getElementById(id);
-  const state = {
-    file: null,
-    originalBytes: null,
-    appliedBytes: null,
-    originalType: 'application/octet-stream',
-    originalName: 'glitched-file',
-    viewMode: 'escaped',
-    previewGood: false,
-    debounce: null
-  };
-
-  const MAX_SIZE = 8 * 1024 * 1024; // 8 MB for workable text editing
-  const originalCanvas = $('glitchOriginal');
-  const previewCanvas = $('glitchPreview');
-  const originalCtx = originalCanvas.getContext('2d');
-  const previewCtx = previewCanvas.getContext('2d');
-  const editor = $('glitchText');
-  const status = $('glitchStatus');
-  const resultMeta = $('glitchResultMeta');
-
-  function setStatus(msg, kind='info'){
-    status.textContent = msg;
-    status.dataset.kind = kind;
-  }
-  function toast(msg){ if(window.wmToast) window.wmToast(msg); }
-
-  function textCanvas(canvas, message, accent='#728296'){
-    const ctx = canvas.getContext('2d');
-    canvas.width = 720; canvas.height = 450;
-    ctx.fillStyle = '#080c15'; ctx.fillRect(0,0,canvas.width,canvas.height);
-    ctx.strokeStyle = 'rgba(156,255,100,.14)'; ctx.strokeRect(18,18,canvas.width-36,canvas.height-36);
-    ctx.fillStyle = accent;
-    ctx.font = '15px monospace'; ctx.textAlign = 'center';
-    const lines = String(message).split('\n');
-    lines.forEach((line,i)=>ctx.fillText(line, canvas.width/2, canvas.height/2 + (i - (lines.length-1)/2) * 20));
-  }
-
-  function setButtonState(loaded){
-    ['glitchRefresh','glitchReset','glitchRandom','glitchInsert','glitchDelete','glitchDownload','glitchToAudio']
-      .forEach(id => $(id).disabled = !loaded);
-  }
-
-  function drawScaled(canvas, source){
-    const naturalW = source.naturalWidth || source.width;
-    const naturalH = source.naturalHeight || source.height;
-    const maxW = 720, maxH = 450;
-    const scale = Math.min(maxW / naturalW, maxH / naturalH, 1);
-    const w = Math.max(1, Math.round(naturalW * scale));
-    const h = Math.max(1, Math.round(naturalH * scale));
-    const ctx = canvas.getContext('2d');
-    canvas.width = maxW; canvas.height = maxH;
-    ctx.clearRect(0,0,maxW,maxH);
-    ctx.fillStyle = '#060912'; ctx.fillRect(0,0,maxW,maxH);
-    const x = Math.round((maxW - w) / 2), y = Math.round((maxH - h) / 2);
-    ctx.drawImage(source, x, y, w, h);
-  }
-
-  function formatBytes(n){ return `${n.toLocaleString()} BYTES`; }
-  function updateStats(editedLength){
-    const originalLen = state.originalBytes ? state.originalBytes.length : 0;
-    const edited = editedLength ?? 0;
-    $('glitchOriginalBytes').textContent = `ORIGINAL: ${formatBytes(originalLen)}`;
-    $('glitchEditedBytes').textContent = `EDITED: ${formatBytes(edited)}`;
-    const delta = edited - originalLen;
-    $('glitchDeltaBytes').textContent = `Δ ${delta >= 0 ? '+' : ''}${delta.toLocaleString()}`;
-  }
-
-  function detectMime(name, fallback){
-    const n = (name || '').toLowerCase();
-    if(/\.png$/.test(n)) return 'image/png';
-    if(/\.jpe?g$/.test(n)) return 'image/jpeg';
-    if(/\.webp$/.test(n)) return 'image/webp';
-    if(/\.gif$/.test(n)) return 'image/gif';
-    if(/\.bmp$/.test(n)) return 'image/bmp';
-    return fallback || 'application/octet-stream';
-  }
-
-  function getExt(name){
-    const m = /\.[^.]+$/.exec(name || '');
-    return m ? m[0] : '';
-  }
-
   function bytesToEscapedText(bytes){
-    let out = '';
-    const len = bytes.length;
-    for(let i=0;i<len;i++){
-      const b = bytes[i];
-      if(b === 10) out += '\n';
-      else if(b === 13) out += '\r';
-      else if(b === 9) out += '\t';
-      else if(b === 92) out += '\\\\';
-      else if(b >= 32 && b <= 126) out += String.fromCharCode(b);
-      else out += `\\x${b.toString(16).padStart(2,'0').toUpperCase()}`;
+    const parts=[];
+    for(let i=0;i<bytes.length;i++){
+      const b=bytes[i];
+      if(b===10)parts.push('\\n');
+      else if(b===13)parts.push('\\r');
+      else if(b===9)parts.push('\\t');
+      else if(b===92)parts.push('\\\\');
+      else if(b>=32&&b<=126)parts.push(String.fromCharCode(b));
+      else parts.push('\\x'+b.toString(16).padStart(2,'0').toUpperCase());
     }
-    return out;
+    return parts.join('');
   }
-
   function escapedTextToBytes(text){
-    const out = [];
+    const out=[];
     for(let i=0;i<text.length;){
-      const ch = text[i];
-      if(ch !== '\\'){
-        out.push(text.charCodeAt(i) & 255);
-        i += 1;
-        continue;
+      const ch=text.charCodeAt(i);
+      if(ch!==92){
+        if(ch<=255){out.push(ch);i++;continue;}
+        // Inserted Unicode letters are UTF-8 encoded as their actual bytes.
+        const cp=text.codePointAt(i), seq=new TextEncoder().encode(String.fromCodePoint(cp));
+        for(const b of seq)out.push(b);i+=cp>65535?2:1;continue;
       }
-      const next = text[i+1];
-      if(next === 'x' && /^[0-9a-fA-F]{2}$/.test(text.slice(i+2, i+4))){
-        out.push(parseInt(text.slice(i+2, i+4), 16));
-        i += 4;
-      } else if(next === 'n') { out.push(10); i += 2; }
-      else if(next === 'r') { out.push(13); i += 2; }
-      else if(next === 't') { out.push(9); i += 2; }
-      else if(next === '\\') { out.push(92); i += 2; }
-      else { out.push(92); i += 1; }
+      const n=text[i+1];
+      if(n==='x'&&/^[0-9a-f]{2}$/i.test(text.slice(i+2,i+4))){out.push(parseInt(text.slice(i+2,i+4),16));i+=4;}
+      else if(n==='n'){out.push(10);i+=2;}
+      else if(n==='r'){out.push(13);i+=2;}
+      else if(n==='t'){out.push(9);i+=2;}
+      else if(n==='\\'){out.push(92);i+=2;}
+      else{out.push(92);i++;}
     }
     return Uint8Array.from(out);
   }
-
-  function bytesToHex(bytes){
-    return Array.from(bytes, b => b.toString(16).padStart(2,'0').toUpperCase()).join(' ');
-  }
+  function bytesToHex(bytes){return Array.from(bytes,b=>b.toString(16).padStart(2,'0').toUpperCase()).join(' ')}
   function hexToBytes(text){
-    const cleaned = text.replace(/[^0-9a-fA-F]/g, ' ');
-    const parts = cleaned.trim() ? cleaned.trim().split(/\s+/) : [];
-    if(parts.some(p => p.length !== 2)) throw new Error('HEX VIEW REQUIRES TWO-DIGIT BYTE TOKENS LIKE FF 00 A4');
-    return Uint8Array.from(parts.map(p => parseInt(p,16)));
+    const tokens=text.trim()?text.trim().split(/\s+/):[];
+    if(tokens.some(t=>!/^[0-9a-f]{2}$/i.test(t)))throw Error('HEX MODE: USE SPACE-SEPARATED TWO-DIGIT BYTES, SUCH AS FF 00 A4');
+    return Uint8Array.from(tokens.map(t=>parseInt(t,16)));
   }
-
-  function currentBytesFromEditor(){
-    if(state.viewMode === 'hex') return hexToBytes(editor.value);
-    return escapedTextToBytes(editor.value);
+  function hashColour(token){
+    // FNV-1a mapping: arbitrary words are converted into repeatable visible colours.
+    let h=2166136261;
+    for(let i=0;i<token.length;i++){h=Math.imul(h^token.charCodeAt(i),16777619)>>>0;}
+    const r=(h>>>16)&255,g=(h>>>8)&255,b=h&255;
+    return [r,g,b];
   }
-
-  function applyBytesToEditor(bytes, preserveScroll=false){
-    const top = editor.scrollTop;
-    editor.value = state.viewMode === 'hex' ? bytesToHex(bytes) : bytesToEscapedText(bytes);
-    if(preserveScroll) editor.scrollTop = top;
-    updateStats(bytes.length);
+  function rgbToPixelText(rgba,width,height){
+    const lines=[];
+    lines.push('// PIXEL TEXT · '+width+' x '+height+' · RGB VALUES');
+    lines.push('// EVERY TOKEN IS ONE PIXEL: FF0000 = RED, 00FF00 = GREEN');
+    lines.push('// DELETE, REPLACE, PASTE, OR INSERT ANY WORDS. EACH WORD BECOMES A COLOUR.');
+    for(let y=0;y<height;y++){
+      const row=[];
+      for(let x=0;x<width;x++){
+        const i=(y*width+x)*4;
+        row.push([rgba[i],rgba[i+1],rgba[i+2]].map(v=>v.toString(16).padStart(2,'0').toUpperCase()).join(''));
+      }
+      lines.push(row.join(' '));
+    }
+    return lines.join('\n');
   }
+  function pixelTokens(text){
+    const data=text.split(/\r?\n/).filter(line=>!line.trimStart().startsWith('//')).join(' ').trim();
+    return data?data.split(/\s+/):[];
+  }
+  function pixelTextToRGBA(text,width,height){
+    if(!Number.isInteger(width)||!Number.isInteger(height)||width<=0||height<=0||width*height>100000)throw Error('INVALID PIXEL WORKSPACE SIZE');
+    const rgba=new Uint8ClampedArray(width*height*4);
+    const tokens=pixelTokens(text);
+    let words=0;
+    const used=Math.min(tokens.length,width*height);
+    for(let i=0;i<width*height;i++){
+      let r=0,g=0,b=0;
+      if(i<used){
+        let s=tokens[i];
+        if(/^#?[0-9a-f]{6}$/i.test(s)){
+          if(s[0]==='#')s=s.slice(1);
+          const colour=parseInt(s,16);
+          r=(colour>>>16)&255;g=(colour>>>8)&255;b=colour&255;
+        }else if(/^0x[0-9a-f]{6}$/i.test(s)){
+          const c=parseInt(s.slice(2),16);r=(c>>>16)&255;g=(c>>>8)&255;b=c&255;
+        }else{[r,g,b]=hashColour(s);words++;}
+      }
+      const k=i*4;rgba[k]=r;rgba[k+1]=g;rgba[k+2]=b;rgba[k+3]=255;
+    }
+    return {rgba,used,words,missing:width*height-used,overflow:Math.max(0,tokens.length-width*height),total:tokens.length};
+  }
+  return {bytesToEscapedText,escapedTextToBytes,bytesToHex,hexToBytes,hashColour,rgbToPixelText,pixelTokens,pixelTextToRGBA};
+});
 
-  async function decodeBytes(bytes){
-    const blob = new Blob([bytes], { type: state.originalType });
-    return new Promise((resolve, reject) => {
-      const url = URL.createObjectURL(blob);
-      const img = new Image();
-      img.onload = ()=>{ URL.revokeObjectURL(url); resolve(img); };
-      img.onerror = ()=>{ URL.revokeObjectURL(url); reject(new Error('Browser could not decode the edited byte stream')); };
-      img.src = url;
+(function(){
+  'use strict';
+  if(typeof document==='undefined')return;
+  const $=id=>document.getElementById(id), core=window.WMTextGlitch;
+  const src=$('glitchOriginal'),out=$('glitchPreview'),area=$('glitchText');
+  const state={file:null,bytes:null,image:null,originalName:'',mime:'',mode:'pixel',pixelCanvas:null,pixelSource:null,drafts:{},previewGood:false,pending:null,rev:0};
+
+  function stat(message,kind='info'){$('glitchStatus').textContent=message;$('glitchStatus').dataset.kind=kind;}
+  function buttons(on){['glitchRefresh','glitchReset','glitchRandom','glitchInsert','glitchDelete','glitchDownload','glitchToAudio'].forEach(id=>$(id).disabled=!on);}
+  function splash(canvas,txt,color='#73879a'){
+    canvas.width=720;canvas.height=450;const c=canvas.getContext('2d');c.fillStyle='#080b12';c.fillRect(0,0,720,450);
+    c.strokeStyle='#273343';c.strokeRect(15,15,690,420);c.fillStyle=color;c.font='16px monospace';c.textAlign='center';
+    txt.split('\n').forEach((line,i)=>c.fillText(line,360,225+i*24));
+  }
+  function paint(canvas,image,pixelated=false){
+    canvas.width=720;canvas.height=450;
+    const c=canvas.getContext('2d');c.fillStyle='#05080f';c.fillRect(0,0,720,450);
+    const w=image.naturalWidth||image.width,h=image.naturalHeight||image.height;
+    const scale=Math.min(720/w,450/h);const dw=Math.max(1,Math.round(w*scale)),dh=Math.max(1,Math.round(h*scale));
+    c.imageSmoothingEnabled=!pixelated;
+    c.drawImage(image,Math.round((720-dw)/2),Math.round((450-dh)/2),dw,dh);
+  }
+  function pixelBase(image){
+    const max=+$('glitchPixelSize').value;
+    const w=image.naturalWidth||image.width,h=image.naturalHeight||image.height;
+    const scale=Math.min(1,max/Math.max(w,h));
+    const width=Math.max(1,Math.round(w*scale)),height=Math.max(1,Math.round(h*scale));
+    const c=document.createElement('canvas');c.width=width;c.height=height;
+    const cx=c.getContext('2d',{willReadFrequently:true});cx.fillStyle='#080b12';cx.fillRect(0,0,width,height);cx.drawImage(image,0,0,width,height);
+    state.pixelCanvas=c;
+    state.pixelSource=core.rgbToPixelText(cx.getImageData(0,0,width,height).data,width,height);
+    state.drafts.pixel=state.pixelSource;
+  }
+  function drawPixelText(){
+    const c=state.pixelCanvas;
+    const parsed=core.pixelTextToRGBA(area.value,c.width,c.height);
+    c.getContext('2d').putImageData(new ImageData(parsed.rgba,c.width,c.height),0,0);
+    paint(out,c,true);
+    state.previewGood=true;
+    const size=c.width*c.height;
+    $('glitchOriginalBytes').textContent=`GRID: ${c.width}×${c.height}`;
+    $('glitchEditedBytes').textContent=`TOKENS: ${parsed.total.toLocaleString()}`;
+    $('glitchDeltaBytes').textContent=`WORDS: ${parsed.words.toLocaleString()}`;
+    $('glitchResultMeta').textContent=`PIXEL TEXT · ${parsed.used.toLocaleString()}/${size.toLocaleString()} PIXELS · ${parsed.missing.toLocaleString()} EMPTY → BLACK · ${parsed.overflow.toLocaleString()} EXTRA IGNORED`;
+    stat('PIXEL TEXT RENDERED / IMAGE ALWAYS VALID · EXPORTS PNG','ok');
+  }
+  async function decodeBlob(blob){
+    return new Promise((resolve,reject)=>{const url=URL.createObjectURL(blob),img=new Image();
+      img.onload=()=>{URL.revokeObjectURL(url);resolve(img)};
+      img.onerror=()=>{URL.revokeObjectURL(url);reject(Error('BROWSER CANNOT DECODE THE ALTERED FILE'))};img.src=url;
     });
   }
-
-  async function previewApplied(bytes){
-    state.appliedBytes = bytes;
-    resultMeta.textContent = `EDITED FILE READY · ${formatBytes(bytes.length)} · TYPE ${state.originalType}`;
+  async function renderRaw(bytes,id){
+    const blob=new Blob([bytes],{type:state.mime});
     try{
-      const img = await decodeBytes(bytes);
-      drawScaled(previewCanvas, img);
-      setStatus('EDIT APPLIED / FILE STILL DECODES', 'ok');
-      state.previewGood = true;
-      return true;
-    } catch(err){
-      textCanvas(previewCanvas, 'DECODER REJECTED\nTHE EDITED FILE', '#ff91ae');
-      setStatus('EDIT APPLIED / CURRENT FILE DOES NOT DECODE — YOU CAN STILL EXPORT IT', 'error');
-      state.previewGood = false;
-      return false;
+      const img=await decodeBlob(blob);if(id!==state.rev)return;
+      paint(out,img);state.previewGood=true;stat('RAW FILE RENDERED / BINARY DATA STILL DECODES','ok');
+    }catch(e){
+      if(id!==state.rev)return;
+      splash(out,'DECODER REJECTED THE FILE\nTRY PIXEL TEXT FOR RELIABLE GLITCHES','#ff8aaa');state.previewGood=false;
+      stat('RAW BINARY DATA NO LONGER DECODES. PIXEL TEXT MODE IS THE RELIABLE ALTERNATIVE.','error');
+    }
+    if(id===state.rev){
+      $('glitchResultMeta').textContent=`RAW ${state.mode.toUpperCase()} · ${bytes.length.toLocaleString()} BYTES · ${state.previewGood?'DECODED':'BROKEN FILE (STILL EXPORTABLE)'}`;
     }
   }
-
-  async function refreshPreview(){
-    if(!state.file) return;
+  function sourceRawDraft(mode){return mode==='escaped'?core.bytesToEscapedText(state.bytes):core.bytesToHex(state.bytes)}
+  function fromRawText(){return state.mode==='hex'?core.hexToBytes(area.value):core.escapedTextToBytes(area.value)}
+  function updateRawStats(bytes){
+    $('glitchOriginalBytes').textContent=`ORIGINAL: ${state.bytes.length.toLocaleString()} BYTES`;
+    $('glitchEditedBytes').textContent=`EDITED: ${bytes.length.toLocaleString()} BYTES`;
+    const delta=bytes.length-state.bytes.length;$('glitchDeltaBytes').textContent=`Δ ${delta>=0?'+':''}${delta.toLocaleString()}`;
+  }
+  async function refresh(){
+    if(!state.file)return;
+    clearTimeout(state.pending);
+    state.drafts[state.mode]=area.value;
+    const id=++state.rev;
     try{
-      const bytes = currentBytesFromEditor();
-      updateStats(bytes.length);
-      return await previewApplied(bytes);
-    } catch(err){
-      setStatus(err.message, 'error');
-      state.previewGood = false;
-      resultMeta.textContent = 'EDITOR CONTENT COULD NOT BE PARSED.';
-      return false;
-    }
+      if(state.mode==='pixel'){drawPixelText();return}
+      const bytes=fromRawText();updateRawStats(bytes);await renderRaw(bytes,id);
+    }catch(e){if(id!==state.rev)return;stat(e.message,'error');$('glitchResultMeta').textContent='EDITOR CONTENT COULD NOT BE PARSED';state.previewGood=false;}
   }
-
-  function queueLivePreview(){
-    if(!state.file) return;
-    let len = 0;
-    try { len = currentBytesFromEditor().length; updateStats(len); setStatus('DATA CHANGED / WAITING TO REFRESH PREVIEW…'); }
-    catch(err){ setStatus(err.message, 'error'); return; }
-    if(!$('glitchLive').checked) return;
-    clearTimeout(state.debounce);
-    state.debounce = setTimeout(()=>refreshPreview(), 420);
+  function schedule(){
+    if(!state.file)return;
+    state.drafts[state.mode]=area.value;
+    clearTimeout(state.pending);
+    stat('CHANGES DETECTED / PREVIEW PENDING…');
+    if($('glitchLive').checked)state.pending=setTimeout(refresh,state.mode==='pixel'?320:600);
   }
-
-  async function loadFile(file){
-    if(!file) return;
-    if(file.size > MAX_SIZE){ setStatus('FILE TOO LARGE FOR THIS FREEFORM EDITOR / TRY UNDER 8 MB', 'error'); return; }
-    const type = detectMime(file.name, file.type);
-    if(!/^image\//.test(type)){ setStatus('PLEASE LOAD AN IMAGE FILE', 'error'); return; }
-    setButtonState(false);
-    setStatus('OPENING FILE…');
+  function uiMode(){
+    const pixel=state.mode==='pixel';
+    $('glitchPixelSettings').hidden=!pixel;
+    $('glitchEditorNote').innerHTML=pixel
+      ? 'PIXEL TEXT / DECODED RGB DATA. Each <code>RRGGBB</code> token is one pixel. Delete or insert tokens to shift pixels. Arbitrary words become repeatable colours. The preview <b>always works</b> and exports PNG.'
+      : state.mode==='escaped'
+        ? 'RAW ESCAPED TEXT / EXACT FILE BYTES. Printable bytes appear as characters; other bytes as <code>\\xNN</code>. Edits can break compression, markers or checksums. Decoder failures are expected.'
+        : 'RAW HEX FILE / EXACT BYTES. Add, delete or replace two-digit hex tokens (e.g. <code>FF A2 00</code>). Many edits make compressed files undecodable.';
+    $('glitchDownload').textContent=pixel?'EXPORT GLITCHED PNG ↧':'EXPORT RAW GLITCHED FILE ↧';
+  }
+  async function switchMode(){
+    clearTimeout(state.pending);
+    if(state.file)state.drafts[state.mode]=area.value;
+    state.mode=$('glitchViewMode').value;uiMode();
+    if(!state.file)return;
+    if(!state.drafts[state.mode])state.drafts[state.mode]=state.mode==='pixel'?state.pixelSource:sourceRawDraft(state.mode);
+    area.value=state.drafts[state.mode];
+    await refresh();
+  }
+  async function load(file){
+    if(!file)return;
+    if(file.size>8*1024*1024){stat('8 MB EDITOR LIMIT / TRY A SMALLER FILE','error');return;}
+    if(!/^image\//.test(file.type)&&!/\.(png|jpe?g|gif|webp|bmp)$/i.test(file.name)){stat('UPLOAD A SUPPORTED IMAGE','error');return;}
+    buttons(false);stat('LOADING IMAGE DATA…');
     try{
-      const bytes = new Uint8Array(await file.arrayBuffer());
-      const img = await decodeBytes(bytes);
-      state.file = file;
-      state.originalBytes = bytes;
-      state.appliedBytes = bytes.slice();
-      state.originalType = type;
-      state.originalName = file.name;
-      state.viewMode = $('glitchViewMode').value;
-      drawScaled(originalCanvas, img);
-      drawScaled(previewCanvas, img);
-      applyBytesToEditor(bytes);
-      $('glitchFileMeta').textContent = `${file.name} · ${(file.size/1024).toFixed(1)} KiB · ${img.naturalWidth || img.width} × ${img.naturalHeight || img.height} · ${type}`;
-      resultMeta.textContent = `CURRENT RESULT MATCHES THE ORIGINAL FILE · ${formatBytes(bytes.length)}`;
-      setButtonState(true);
-      setStatus('FILE OPENED / EDIT THE DATA AND REFRESH THE PREVIEW', 'ok');
-      state.previewGood = true;
-    } catch(err){
-      setStatus('COULD NOT OPEN IMAGE: ' + err.message, 'error');
-      setButtonState(false);
-    }
+      const original=new Uint8Array(await file.arrayBuffer());
+      const mime=file.type||({png:'image/png',jpg:'image/jpeg',jpeg:'image/jpeg',gif:'image/gif',webp:'image/webp',bmp:'image/bmp'}[(file.name.split('.').pop()||'').toLowerCase()]||'image/png');
+      const img=await decodeBlob(new Blob([original],{type:mime}));
+      state.file=file;state.bytes=original;state.image=img;state.mime=mime;state.originalName=file.name;state.drafts={};
+      pixelBase(img);paint(src,img);$('glitchFileMeta').textContent=`${file.name} · ${(file.size/1024).toFixed(1)} KiB · ${img.naturalWidth}×${img.naturalHeight}`;
+      state.mode=$('glitchViewMode').value;uiMode();
+      state.drafts[state.mode]=state.mode==='pixel'?state.pixelSource:sourceRawDraft(state.mode);
+      area.value=state.drafts[state.mode];buttons(true);await refresh();
+    }catch(e){stat('CANNOT OPEN IMAGE: '+e.message,'error');buttons(false);}
   }
-
-  function randomAsciiChunk(){
-    const parts = ['ERROR','GLITCH','DATA','NOISE','////','@@@@','%%%%','###','???','0000','1111','WM'];
-    let out = parts[Math.floor(Math.random()*parts.length)];
-    if(Math.random() < 0.7) out += `\\x${Math.floor(Math.random()*256).toString(16).padStart(2,'0').toUpperCase()}`;
-    return out;
-  }
-
-  function mutateText(text, operations){
-    let s = text;
-    for(let i=0;i<operations;i++){
-      const action = Math.random();
-      if(action < 0.34 || s.length === 0){
-        const at = Math.floor(Math.random() * (s.length + 1));
-        s = s.slice(0, at) + randomAsciiChunk() + s.slice(at);
-      } else if(action < 0.67){
-        const start = Math.floor(Math.random() * s.length);
-        const del = Math.max(1, Math.floor(Math.random() * 8));
-        s = s.slice(0, start) + s.slice(start + del);
-      } else {
-        const at = Math.floor(Math.random() * s.length);
-        const del = Math.max(1, Math.floor(Math.random() * 5));
-        s = s.slice(0, at) + randomAsciiChunk() + s.slice(at + del);
+  function mangleText(input,count,mode){
+    if(mode==='pixel'){
+      const lines=input.split(/\r?\n/),start=lines.findIndex(l=>!l.trimStart().startsWith('//'));
+      const head=start>=0?lines.slice(0,start).join('\n')+'\n':'';
+      const tokens=core.pixelTokens(input);
+      for(let i=0;i<count;i++){
+        const n=Math.floor(Math.random()*(tokens.length+1));
+        const action=Math.random();
+        if(action<.4)tokens.splice(n,0,['GLITCH','WRONG','MACHINE','NOISE','FF00FF','00FFFF'][Math.floor(Math.random()*6)]);
+        else if(action<.7&&tokens.length)tokens.splice(Math.min(n,tokens.length-1),1);
+        else if(tokens.length)tokens[Math.min(n,tokens.length-1)]=['GLITCH','ART','F00D00','000000','FFFFFF','C0FFEE'][Math.floor(Math.random()*6)];
       }
+      const chunks=[];for(let i=0;i<tokens.length;i+=32)chunks.push(tokens.slice(i,i+32).join(' '));
+      return head+chunks.join('\n');
     }
-    return s;
-  }
-
-  function hexRandomBytes(count){
-    const arr = [];
-    for(let i=0;i<count;i++) arr.push(Math.floor(Math.random()*256).toString(16).padStart(2,'0').toUpperCase());
-    return arr.join(' ');
-  }
-
-  function mutateHex(text, operations){
-    let tokens = text.trim() ? text.trim().split(/\s+/) : [];
-    for(let i=0;i<operations;i++){
-      const action = Math.random();
-      if(action < 0.34 || tokens.length === 0){
-        const at = Math.floor(Math.random() * (tokens.length + 1));
-        const add = hexRandomBytes(Math.max(1, Math.floor(Math.random()*4)+1)).split(' ');
-        tokens.splice(at, 0, ...add);
-      } else if(action < 0.67){
-        const at = Math.floor(Math.random() * tokens.length);
-        const del = Math.max(1, Math.floor(Math.random() * 4));
-        tokens.splice(at, del);
-      } else {
-        const at = Math.floor(Math.random() * tokens.length);
-        const del = Math.max(1, Math.floor(Math.random() * 3));
-        const add = hexRandomBytes(Math.max(1, Math.floor(Math.random()*3)+1)).split(' ');
-        tokens.splice(at, del, ...add);
-      }
+    const tokens=mode==='hex'?input.trim().split(/\s+/):Array.from(input);
+    for(let i=0;i<count;i++){
+      const n=Math.floor(Math.random()*(tokens.length+1)),r=Math.random();
+      const v=mode==='hex'?Math.floor(Math.random()*256).toString(16).padStart(2,'0').toUpperCase():'GLITCH\\x'+Math.floor(Math.random()*256).toString(16).padStart(2,'0').toUpperCase();
+      if(r<.4)tokens.splice(n,0,v);else if(r<.7&&tokens.length)tokens.splice(Math.min(n,tokens.length-1),1);
+      else if(tokens.length)tokens[Math.min(n,tokens.length-1)]=v;
     }
-    return tokens.join(' ');
+    return mode==='hex'?tokens.join(' '):tokens.join('');
   }
-
-  function doDownload(file){
-    const a = document.createElement('a');
-    const url = URL.createObjectURL(file);
-    a.href = url; a.download = file.name; document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(()=>URL.revokeObjectURL(url), 1500);
+  function editSelection(replace){
+    if(!state.file)return;
+    const s=area.selectionStart,e=area.selectionEnd,v=area.value;
+    let a=s,b=e;
+    if(!replace&&s===e){a=Math.max(0,s-30);b=Math.min(v.length,s+30)}
+    const add=replace?(state.mode==='pixel'?` GLITCH FFFFFF NOISE `:state.mode==='hex'?' DE AD BE EF ':'GLITCH\\xFA'):'';
+    area.value=v.slice(0,a)+add+v.slice(b);area.selectionStart=area.selectionEnd=a+add.length;
+    schedule();area.focus();
   }
-
-  async function currentFile(){
-    const bytes = state.appliedBytes || currentBytesFromEditor();
-    const ext = getExt(state.originalName) || '.bin';
-    const base = state.originalName.replace(/\.[^.]+$/, '') || 'glitched';
-    return new File([bytes], `${base}-glitched${ext}`, { type: state.originalType });
-  }
-
-  $('glitchInput').addEventListener('change', e => loadFile(e.target.files[0]));
-  $('glitchUseCurrent').addEventListener('click', ()=>{
-    if(!window.wmCurrentImageFile){ setStatus('IMAGE SOUND LAB IS NOT AVAILABLE', 'error'); return; }
-    const file = window.wmCurrentImageFile();
-    if(!file){ setStatus('LOAD AN IMAGE IN IMAGE → SOUND FIRST', 'error'); return; }
-    loadFile(file);
-  });
-
-  const drop = $('glitchDrop');
-  drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('hover'); });
-  drop.addEventListener('dragleave', ()=> drop.classList.remove('hover'));
-  drop.addEventListener('drop', e => {
-    e.preventDefault(); drop.classList.remove('hover');
-    if(e.dataTransfer.files && e.dataTransfer.files[0]) loadFile(e.dataTransfer.files[0]);
-  });
-
-  $('glitchViewMode').addEventListener('change', ()=>{
-    state.viewMode = $('glitchViewMode').value;
-    $('glitchEditorNote').innerHTML = state.viewMode === 'hex'
-      ? 'Hex View treats the file as editable byte tokens. Add, remove, or replace bytes freely. Example: <code>89 50 4E 47 0D 0A</code>.'
-      : 'Escaped Text is the main mode. Type ordinary characters directly. Use <code>\\xNN</code> for explicit byte values. Example: <code>HELLO\\x00WORLD</code>.';
-    try {
-      const bytes = state.appliedBytes || state.originalBytes || new Uint8Array();
-      applyBytesToEditor(bytes, true);
-      setStatus('EDITOR VIEW CHANGED', 'ok');
-    } catch(err){ setStatus(err.message, 'error'); }
-  });
-
-  editor.addEventListener('input', queueLivePreview);
-  $('glitchRefresh').addEventListener('click', ()=> refreshPreview());
-  $('glitchReset').addEventListener('click', ()=>{
-    if(!state.originalBytes) return;
-    clearTimeout(state.debounce);
-    state.appliedBytes = state.originalBytes.slice();
-    applyBytesToEditor(state.originalBytes);
-    drawScaled(previewCanvas, originalCanvas);
-    resultMeta.textContent = `CURRENT RESULT MATCHES THE ORIGINAL FILE · ${formatBytes(state.originalBytes.length)}`;
-    state.previewGood = true;
-    setStatus('RESET TO THE ORIGINAL FILE DATA', 'ok');
-  });
-
-  $('glitchIntensity').addEventListener('input', ()=> $('glitchIntensityVal').textContent = $('glitchIntensity').value);
-  $('glitchRandom').addEventListener('click', ()=>{
-    if(!state.file) return;
-    const ops = +$('glitchIntensity').value;
-    editor.value = state.viewMode === 'hex' ? mutateHex(editor.value, ops) : mutateText(editor.value, ops);
-    queueLivePreview();
-    toast('Random mangling injected into the data stream.');
-  });
-  $('glitchInsert').addEventListener('click', ()=>{
-    if(!state.file) return;
-    const chunk = state.viewMode === 'hex' ? (' ' + hexRandomBytes(Math.max(1, Math.floor(Math.random()*6)+1))) : randomAsciiChunk();
-    const start = editor.selectionStart ?? editor.value.length;
-    const end = editor.selectionEnd ?? start;
-    editor.value = editor.value.slice(0,start) + chunk + editor.value.slice(end);
-    editor.selectionStart = editor.selectionEnd = start + chunk.length;
-    queueLivePreview();
-  });
-  $('glitchDelete').addEventListener('click', ()=>{
-    if(!state.file || !editor.value.length) return;
-    let start = editor.selectionStart ?? 0;
-    let end = editor.selectionEnd ?? start;
-    if(start === end){
-      const span = Math.max(1, Math.floor(Math.random()*12));
-      start = Math.max(0, start - Math.floor(span/2));
-      end = Math.min(editor.value.length, start + span);
+  function canvasBlob(canvas){return new Promise((resolve,reject)=>canvas.toBlob(blob=>blob?resolve(blob):reject(Error('PNG EXPORT FAILED')),'image/png'))}
+  async function exportFile(){
+    if(state.mode==='pixel'){
+      // Ensure canvas reflects the very latest text, regardless of auto-refresh toggle.
+      drawPixelText();
+      const blob=await canvasBlob(state.pixelCanvas);
+      return new File([blob],state.originalName.replace(/\.[^.]+$/,'')+'-pixel-glitched.png',{type:'image/png'});
     }
-    editor.value = editor.value.slice(0,start) + editor.value.slice(end);
-    editor.selectionStart = editor.selectionEnd = start;
-    queueLivePreview();
-  });
+    const bytes=fromRawText();
+    const name=state.originalName.replace(/(\.[^.]+)$/, '-raw-glitched$1');
+    return new File([bytes],name,{type:state.mime});
+  }
+  function download(file){const a=document.createElement('a'),url=URL.createObjectURL(file);a.href=url;a.download=file.name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),2000)}
 
-  $('glitchDownload').addEventListener('click', async ()=>{
-    if(!state.file) return;
+  $('glitchInput').addEventListener('change',e=>load(e.target.files[0]));
+  $('glitchUseCurrent').addEventListener('click',()=>{const f=window.wmCurrentImageFile?.();if(f)load(f);else stat('LOAD AN IMAGE IN IMAGE → SOUND FIRST','error')});
+  const drop=$('glitchDrop');drop.addEventListener('dragover',e=>{e.preventDefault();drop.classList.add('hover')});
+  drop.addEventListener('dragleave',()=>drop.classList.remove('hover'));
+  drop.addEventListener('drop',e=>{e.preventDefault();drop.classList.remove('hover');load(e.dataTransfer.files[0])});
+  $('glitchViewMode').addEventListener('change',switchMode);
+  $('glitchPixelSize').addEventListener('change',async()=>{
+    if(!state.image)return;
+    pixelBase(state.image);
+    if(state.mode==='pixel'){area.value=state.pixelSource;await refresh();stat('PIXEL GRID REBUILT FROM THE ORIGINAL IMAGE / PREVIOUS PIXEL EDITS RESET','ok')}
+  });
+  area.addEventListener('input',schedule);
+  $('glitchRefresh').addEventListener('click',refresh);
+  $('glitchReset').addEventListener('click',async()=>{
+    if(!state.file)return;
+    state.drafts[state.mode]=state.mode==='pixel'?state.pixelSource:sourceRawDraft(state.mode);
+    area.value=state.drafts[state.mode];await refresh();stat('RESET CURRENT EDITOR TO ORIGINAL IMAGE DATA','ok');
+  });
+  $('glitchIntensity').addEventListener('input',()=>$('glitchIntensityVal').textContent=$('glitchIntensity').value);
+  $('glitchRandom').addEventListener('click',()=>{if(!state.file)return;area.value=mangleText(area.value,+$('glitchIntensity').value,state.mode);schedule()});
+  $('glitchInsert').addEventListener('click',()=>editSelection(true));
+  $('glitchDelete').addEventListener('click',()=>editSelection(false));
+  $('glitchDownload').addEventListener('click',async()=>{
+    try{if(!state.file)return;clearTimeout(state.pending);const file=await exportFile();download(file);stat(state.mode==='pixel'?'VALID GLITCHED PNG EXPORTED':'RAW GLITCHED FILE EXPORTED / MAY NOT DECODE','ok')}
+    catch(e){stat(e.message,'error')}
+  });
+  $('glitchToAudio').addEventListener('click',async()=>{
+    if(!state.file)return;
     try{
-      const bytes = currentBytesFromEditor();
-      updateStats(bytes.length);
-      const ok = await previewApplied(bytes);
-      const ext = getExt(state.originalName) || '.bin';
-      const base = state.originalName.replace(/\.[^.]+$/, '') || 'glitched';
-      const file = new File([bytes], `${base}-glitched${ext}`, { type: state.originalType });
-      doDownload(file);
-      setStatus(ok ? 'GLITCHED FILE EXPORTED' : 'BROKEN/UNREADABLE FILE EXPORTED', ok ? 'ok' : 'error');
-    } catch(err){ setStatus('EXPORT FAILED: ' + err.message, 'error'); }
+      clearTimeout(state.pending);await refresh();
+      if(!state.previewGood){stat('RAW DATA DOES NOT DECODE. SWITCH TO PIXEL TEXT OR UNDO THE RAW CHANGES.','error');return;}
+      const file=await exportFile();await window.wmLoadImageIntoSound(file);
+      document.querySelector('[data-tab="image"]').click();stat('GLITCHED IMAGE SENT TO SONIFICATION LAB','ok');
+    }catch(e){stat('SOUND LAB TRANSFER FAILED: '+e.message,'error')}
   });
-
-  $('glitchToAudio').addEventListener('click', async ()=>{
-    if(!state.file) return;
-    try{
-      const bytes = currentBytesFromEditor();
-      updateStats(bytes.length);
-      const ok = await previewApplied(bytes);
-      if(!ok || !state.previewGood){ setStatus('CURRENT FILE DOES NOT DECODE, SO IT CANNOT BE SENT TO IMAGE → SOUND', 'error'); return; }
-      const ext = getExt(state.originalName) || '.bin';
-      const base = state.originalName.replace(/\.[^.]+$/, '') || 'glitched';
-      const file = new File([bytes], `${base}-glitched${ext}`, { type: state.originalType });
-      await window.wmLoadImageIntoSound(file);
-      const tab = document.querySelector('[data-tab="image"]');
-      if(tab) tab.click();
-      setStatus('EDITED FILE SENT TO IMAGE → SOUND', 'ok');
-    } catch(err){ setStatus('TRANSFER FAILED: ' + err.message, 'error'); }
-  });
-
-  textCanvas(originalCanvas, 'ORIGINAL IMAGE\nAWAITING FILE');
-  textCanvas(previewCanvas, 'EDITED RESULT\nAWAITING FILE', '#9fb2c6');
-  setButtonState(false);
-  updateStats(0);
+  splash(src,'ORIGINAL IMAGE\nAWAITING FILE');splash(out,'TEXT GLITCH RESULT\nAWAITING FILE');
+  buttons(false);uiMode();
 })();
